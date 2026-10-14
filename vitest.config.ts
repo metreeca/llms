@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import { existsSync } from "fs";
-import { join } from "path";
+import { symlinks } from "@metreeca/rack/vite";
 import { defineConfig } from "vitest/config";
 
-const packages = join(import.meta.dirname, "packages");
-
 export default defineConfig({
+
+	plugins: [
+		symlinks({ conditions: "@metreeca/source" })
+	],
 
 	test: {
 
@@ -34,58 +35,6 @@ export default defineConfig({
 			tsconfig: "packages/muse/tsconfig.json"
 		}
 
-	},
-
-	plugins: [{
-
-		name: "muse-resolver",
-		enforce: "pre",
-
-		/**
-		 * Resolves `@metreeca/muse*` workspace imports to TypeScript source for build-free testing.
-		 *
-		 * - `@metreeca/muse-pkg` → `packages/muse-pkg/src/index.ts`
-		 * - `@metreeca/muse-pkg/module` → `packages/muse-pkg/src/module.ts` or `packages/muse-pkg/src/module/index.ts`
-		 *
-		 * @param id - The module specifier to resolve
-		 *
-		 * @returns The resolved file path, or `null` if the specifier does not match
-		 */
-		resolveId(id: string) {
-
-			const bare = id.match(/^@metreeca\/(muse[^/]*)$/);
-
-			if ( bare ) { // bare package import
-
-				const index = join(packages, bare[1], "src", "index.ts");
-
-				return existsSync(index) ? index : null;
-
-			} else { // subpath import
-
-				const module = id.match(/^@metreeca\/(muse[^/]*)\/(.+)$/);
-
-				if ( module ) {
-
-					const source = join(packages, module[1], "src");
-
-					const named = join(source, `${module[2]}.ts`);
-					const index = join(source, module[2], "index.ts");
-
-					return existsSync(named) ? named
-						: existsSync(index) ? index
-							: null;
-
-				} else {
-
-					return null;
-
-				}
-
-			}
-
-		}
-
-	}]
+	}
 
 });
