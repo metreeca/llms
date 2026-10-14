@@ -15,12 +15,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Upgrade `@metreeca/flow` to `^0.11.1`
-- Upgrade `@metreeca/tape` to `^0.11.1`
-- Upgrade `@metreeca/core` to `^0.12.1`
-- Upgrade `@metreeca/gear` to `^0.3.1`
-- requires `@metreeca/core` `^0.12.0`, `@metreeca/flow` `^0.11.0`, `@metreeca/gear` `^0.3.0` and `@metreeca/tape`
-  `^0.11.0`, so that a consumer on the current line resolves one copy of each rather than a second, superseded one
+- Require `@metreeca/core` `^0.12.1`, `@metreeca/flow` `^0.11.1`, `@metreeca/gear` `^0.3.1` and `@metreeca/tape`
+  `^0.11.1`, so that a consumer on the current line resolves one copy of each rather than a second, superseded one
 
 ## [0.1.1](https://github.com/metreeca/muse/compare/v0.1.0...v0.1.1) - 2026-09-09
 
