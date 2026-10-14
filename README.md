@@ -1,20 +1,18 @@
 # Renaming
 
-`muse` is to be replaced: since April 2026 Meta has used *Muse* for its generative AI line (the Muse Spark, Glimmer
-and Wonder models, the Muse agent app and Muse Code), and has filed a *META MUSE* trademark application. The legal risk
-is low, but the name is now ambiguous in searches and in documentation, and a Meta connector would read as
+`muse` is to be replaced: since April 2026 Meta has used *Muse* for its generative AI line (the Muse Spark, Glimmer and
+Wonder models, the Muse agent app and Muse Code), and has filed a *META MUSE* trademark application. The legal risk is
+low, but the name is now ambiguous in searches and in documentation, and a Meta connector would read as
 `muse-meta`.
 
 Candidates keep to four letters and to the light, slightly whimsical register of the sibling packages.
 
-| Name   | Rationale                                                                       | Clash                                |
-|--------|---------------------------------------------------------------------------------|--------------------------------------|
-| `talk` | covers both directions: code talking to models, models talking to tools via MCP | none relevant                        |
-| `seer` | the everyday word for an oracle or sibyl                                        | none relevant                        |
-| `wand` | the magic wand and ✨ sparkle are the usual UI icons for generative AI          | none relevant                        |
-| `poet` | the figure the Muse inspires; a model that composes                             | none relevant                        |
-
-
+| Name   | Rationale                                                                       | Clash         |
+|--------|---------------------------------------------------------------------------------|---------------|
+| `talk` | covers both directions: code talking to models, models talking to tools via MCP | none relevant |
+| `seer` | the everyday word for an oracle or sibyl                                        | none relevant |
+| `wand` | the magic wand and ✨ sparkle are the usual UI icons for generative AI          | none relevant |
+| `poet` | the figure the Muse inspires; a model that composes                             | none relevant |
 
 # @metreeca/muse
 
@@ -27,7 +25,7 @@ on.
 
 - **Ready-Made Tasks**: prompting, extraction and embedding, chaining alongside any other task
 - **Shared Services**: the model clients, credentials and response caches a run needs, built on demand and released as
-  it ends
+	it ends
 - **Custom Bindings**: a stubbed, throttled or recorded model swapped in for a run, leaving the job untouched
 - **Minimal Footprint**: one package per model provider, each pulling in only the SDK that provider needs
 
