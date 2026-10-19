@@ -48,7 +48,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
-    "@metreeca/flow": "^0.11.1",
+    "@metreeca/flow": "^0.12.0",
     "@metreeca/muse": "^0.3.0",
     "@metreeca/tape": "^0.12.0"
   },
