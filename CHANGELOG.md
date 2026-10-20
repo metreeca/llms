@@ -7,6 +7,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.3.0](https://github.com/metreeca/llms/compare/v0.2.0...HEAD)
 
+### Added
+
+- `@metreeca/llms` — embedding vector primitives: `synopsis()` builds the text to be embedded for a resource, `cosine()`
+  ranks vectors by semantic proximity, and `compress()`/`decompress()` store them compactly as text
+- `@metreeca/llms-google` — `createGoogleAI()` Gemini API client paced against the published rate quotas, honouring
+  response schemas alongside tools, with `text()`, `json()` and `embedding()` response accessors
+- `@metreeca/llms-openai` — `createOpenAI()` OpenAI API client paced against the published rate quotas, with `text()`,
+  `json()` and `embedding()` accessors rejecting refused, truncated and malformed generations
+
 ### Changed
 
 - Rename `@metreeca/muse`, `@metreeca/muse-google` and `@metreeca/muse-openai` to `@metreeca/llms`,

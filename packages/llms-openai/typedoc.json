@@ -5,6 +5,9 @@
     },
     "@metreeca/tape": {
       "*": "https://metreeca.github.io/tape/"
+    },
+    "openai": {
+      "OpenAI": "https://github.com/openai/openai-node"
     }
   }
 }

@@ -15,13 +15,423 @@
  */
 
 /**
- * OpenAI model connectors for {@link https://github.com/metreeca/llms @metreeca/llms}.
+ * OpenAI model connectors.
  *
- * Gives access to OpenAI models through the OpenAI API, keyed by an API key.
+ * Connects AI jobs to OpenAI models, ready to work alongside any other task in a pipeline. Long runs proceed reliably
+ * to completion, and every result a job receives from a model can be trusted as complete.
  *
  * @module index
  *
  * @see {@link https://platform.openai.com/docs OpenAI API documentation}
+ * @see {@link https://platform.openai.com/docs/api-reference OpenAI API reference}
+ * @see {@link https://github.com/openai/openai-node OpenAI Node API Library}
  */
 
-export {};
+import type { Vector } from "@metreeca/llms";
+import { isObject, isString, memo, type Value } from "@metreeca/core";
+import { createThrottle, type Throttle } from "@metreeca/core/async";
+import { TooManyRequests } from "@metreeca/http";
+import { log, type Logger, report } from "@metreeca/tape";
+import { type ClientOptions, OpenAI } from "openai";
+
+
+/**
+ * The error code the API reports when the account has no quota left to spend.
+ *
+ * @see {@link https://platform.openai.com/docs/guides/error-codes API error codes}
+ */
+const Exhausted = "insufficient_quota";
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * A rate-limited request awaiting a further attempt.
+ *
+ * Never escapes the request it was raised for: it is raised only where the throttle is known to recover from it, and
+ * consumed by the recovery that resumes the request.
+ */
+class Limited extends Error {
+
+	/**
+	 * The delay the request is to be resumed after, in ms, or 0 to leave the pace to the throttle.
+	 */
+	readonly delay: number;
+
+	/**
+	 * Creates a rate-limited request marker.
+	 *
+	 * @param delay The delay the request is to be resumed after, in ms, or 0 to leave the pace to the throttle
+	 */
+	constructor(delay: number) {
+
+		super(`exceeded rate quota with delay <${delay}> ms`);
+
+		this.delay = delay;
+
+	}
+
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Creates an OpenAI API client paced against the published rate quotas.
+ *
+ * The client exposes the full {@link OpenAI} surface, with overloads, streaming and response helpers unaltered. Every
+ * request naming a model is paced by a per-model adaptive throttle, so a long run keeps within the published rate
+ * quota instead of failing on the 429 errors the SDK neither paces nor recovers from.
+ *
+ * @param options The client options, as accepted by the {@link OpenAI} constructor; if omitted, the SDK defaults
+ *                apply, reading the API key from the environment. A custom `fetch` is retained and
+ *                issues every request, paced or not, so transport customisations keep applying
+ *
+ * @returns A client sharing throttling and logging among all requests naming the same model. Models are told apart
+ *          by their exact id, so variant spellings of a model are paced independently
+ *
+ * @throws {@link !Error Error} If `options` supplies no credentials and none is published by the environment, as
+ * signalled by the SDK through an `OpenAIError`
+ *
+ * @remarks
+ *
+ * A client is meant to be configured once by the consumer binding it, so that credentials and endpoint are settled for
+ * a whole execution rather than repeated by each job that draws on the same models.
+ *
+ * Quota control covers every request naming a model, whichever resource issues it and whatever the SDK version
+ * offers. A request rejected over the rate quota is resumed after the `retry-after-ms` or `retry-after` delay the API
+ * advertises, or at the pace the throttle settles on if no delay is advertised. A rejection reporting an exhausted
+ * account is returned as it stands, as no delay recovers from it. Requests naming no model, such as listing files or
+ * models, and requests whose payload cannot be sent twice, such as streamed uploads, are issued unpaced.
+ *
+ * The SDK bypasses pacing when X.509 workload identity credentials are supplied: a client authenticated that way is
+ * served through the SDK transport and left unpaced. Retrying is left to the SDK for everything but the rate quota,
+ * so `maxRetries` still governs recovery from network failures and server errors.
+ *
+ * @see {@link https://platform.openai.com/docs/guides/rate-limits Rate limits}
+ * @see {@link https://platform.openai.com/docs/guides/error-codes API error codes}
+ */
+export function createOpenAI(options: ClientOptions = {}) {
+
+	const dispatch = options.fetch ?? fetch;
+
+	/**
+	 * Retrieves the request channel shared by all requests to a model, opening it on first request.
+	 *
+	 * Channels are memoised by model id exactly as submitted, each logging under a category naming the model alone
+	 * rather than this module, so that a run reads as a list of models rather than of repeated module paths.
+	 *
+	 * @param model The target model name
+	 *
+	 * @returns The channel registered for `model`, retained for the lifetime of the client (see {@link memo})
+	 */
+	const channels = memo<string, {
+
+		logger: Logger
+		throttle: Throttle
+
+	}>(model => ({
+
+		logger: log(["/", model]),
+
+		// !!! the floor is a magic 600 rpm: derive it from the rpm published for the model, that is as
+		// !!! `60_000/rpm`, so that the pace is stated by the quota rather than guessed
+
+		// !!! a floor states requests per minute only: the token and daily quotas are not a function of
+		// !!! elapsed time and are left unguarded
+
+		// !!! quotas are enforced per project, while channels are opened per model: models running
+		// !!! concurrently overrun a shared quota, each pacing correctly on its own
+
+		throttle: createThrottle({
+			minimum: 100,
+			maximum: 60*1000,
+			buildup: 1.10,
+			backoff: 1.10,
+			recover: 0.95
+		})
+
+	}));
+
+
+	return new OpenAI({ ...options, fetch: submit });
+
+
+	/**
+	 * Dispatches a request under the throttle of the model it targets.
+	 *
+	 * @param input The endpoint the request is addressed to
+	 * @param init The request to dispatch
+	 *
+	 * @returns The response to `init`, resumed as many times as the rate quota requires
+	 *
+	 * @throws {@link !TypeError TypeError} If the request cannot be dispatched
+	 */
+	async function submit(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+
+		const model = target(init);
+
+		if ( model === undefined ) { // no model to pace against
+
+			return await dispatch(input, init);
+
+		} else {
+
+			const { logger, throttle } = channels(model);
+
+			return await throttle.retry(async () => {
+
+				const response = await dispatch(input, init);
+				const delay = await limited(response);
+
+				if ( delay !== undefined ) {
+					throw new Limited(delay);
+				}
+
+				return response;
+
+			}, {
+
+				recover: error => error instanceof Limited ? error.delay : undefined,
+
+				monitor: (attempt, attempts, elapsed) => {
+
+					const count = attempts > 0 ? `${attempt+1}/${attempts}` : `${attempt+1}`;
+
+					if ( elapsed === undefined ) {
+						logger.error`request attempt ${count} aborted`;
+					} else if ( attempt > 0 ) {
+						logger.warning`request attempt ${count} rejected with delay ${elapsed} ms`;
+					} else {
+						logger.info`request attempt ${count} submitted with delay ${elapsed} ms`;
+					}
+
+				}
+
+			});
+
+		}
+
+	}
+
+	/**
+	 * States the delay a request rejected over the rate quota is to be resumed after.
+	 *
+	 * @param response The response to recover from
+	 *
+	 * @returns The delay the request is to be resumed after, in ms, as advertised by the API, or 0 if it advertises
+	 *          none, if `response` reports the rate quota exceeded; undefined if it reports anything else or an
+	 *          account with no quota left to spend, leaving `response` to the SDK
+	 */
+	async function limited(response: Response): Promise<undefined | number> {
+
+		if ( response.status !== TooManyRequests || await exhausted(response) ) {
+
+			return undefined;
+
+		} else {
+
+			return delay(response.headers);
+
+		}
+
+	}
+
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Extracts the output text of a chat completion.
+ *
+ * @param completion The completion of a `chat.completions.create` request
+ *
+ * @returns The trimmed output text of the first choice of `completion`
+ *
+ * @throws {@link !Error Error} If `completion` carries no choice, if the model refused to generate, or if it stopped
+ * before producing complete output text
+ */
+export function text(completion: OpenAI.ChatCompletion): string {
+
+	const choice = completion.choices[0];
+
+	if ( choice === undefined ) {
+		throw new Error("missing completion choice");
+	}
+
+	const { finish_reason, message: { content, refusal } } = choice;
+
+	if ( refusal ) {
+
+		throw new Error(`refused generation <${refusal}>`);
+
+	} else if ( finish_reason === "length" || finish_reason === "content_filter" ) {
+
+		throw new Error(`incomplete generation with reason <${finish_reason}>`);
+
+	} else if ( !content ) {
+
+		throw new Error("incomplete generation with no output text");
+
+	} else {
+
+		return content.trim();
+
+	}
+
+}
+
+/**
+ * Extracts the output text of a chat completion as a JSON payload.
+ *
+ * The payload is parsed from the output text produced under the requested response format, and typed as `T` without
+ * further validation: callers needing guarantees on its shape must validate it themselves.
+ *
+ * A strict response format states an absent member as `null` instead of leaving it out. Object members stated as
+ * `null` are therefore dropped, so that a payload generated under a strict schema conforms to the shape the schema was
+ * converted from. `null` array items are kept.
+ *
+ * @typeParam T The expected shape of the JSON payload
+ *
+ * @param completion The completion of a `chat.completions.create` request carrying a JSON response format
+ *
+ * @returns The JSON payload parsed from the output text of `completion`
+ *
+ * @throws {@link !Error Error} If `completion` carries no output text (see {@link text}) or its text is not
+ * well-formed JSON
+ */
+export function json<T extends Value = Value>(completion: OpenAI.ChatCompletion): T {
+
+	try {
+
+		return JSON.parse(text(completion), function (this: unknown, _key, value) {
+			return value === null && !Array.isArray(this) ? undefined : value; // drop null members, keeping array items
+		});
+
+	} catch ( e ) {
+
+		throw new Error(`malformed model response: ${report(e)}`);
+
+	}
+
+}
+
+/**
+ * Extracts the embedding of an OpenAI API response.
+ *
+ * @param response The response of an `embeddings.create` request
+ *
+ * @returns The {@link Vector} embedded for the first input of `response`, or an empty array if it carries none
+ */
+export function embedding(response: OpenAI.CreateEmbeddingResponse): Vector {
+
+	return response.data[0]?.embedding ?? [];
+
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * States the model a request is addressed to.
+ *
+ * Only requests whose payload may be dispatched again name a model, so that a request resumed under the rate quota is
+ * never one whose payload was consumed by the attempt that was rejected.
+ *
+ * @param init The request to inspect
+ *
+ * @returns The model named by the payload of `init`, or undefined if it names none or carries a payload that cannot
+ *          be dispatched again
+ */
+function target(init?: RequestInit): undefined | string {
+
+	const body = init?.body;
+
+	if ( isString(body) ) {
+
+		const payload = decode(body);
+
+		return isObject(payload) && isString(payload["model"]) ? payload["model"] : undefined;
+
+	} else if ( body instanceof FormData ) {
+
+		const model = body.get("model");
+
+		return isString(model) ? model : undefined;
+
+	} else {
+
+		return undefined;
+
+	}
+
+}
+
+/**
+ * States whether a rejection leaves the account with no quota to spend.
+ *
+ * @param response The rejection to inspect
+ *
+ * @returns True if `response` reports an exhausted account, which no delay recovers from; false otherwise
+ */
+async function exhausted(response: Response): Promise<boolean> {
+
+	const payload = decode(await response.clone().text().catch(() => ""));
+
+	return isObject(payload)
+		&& isObject(payload["error"])
+		&& payload["error"]["code"] === Exhausted;
+
+}
+
+/**
+ * States the delay a rejection advertises.
+ *
+ * @param headers The headers of the rejection to inspect
+ *
+ * @returns The delay advertised by `headers`, in ms, or 0 if they advertise none, leaving the pace to the throttle
+ *
+ * @see {@link https://platform.openai.com/docs/guides/rate-limits Rate limits}
+ */
+function delay(headers: Headers): number {
+
+	const ms = Number(headers.get("retry-after-ms"));
+	const s = Number(headers.get("retry-after"));
+
+	if ( Number.isFinite(ms) && ms > 0 ) {
+
+		return Math.ceil(ms);
+
+	} else if ( Number.isFinite(s) && s > 0 ) {
+
+		return Math.ceil(s*1000);
+
+	} else {
+
+		return 0;
+
+	}
+
+}
+
+/**
+ * Decodes a JSON payload.
+ *
+ * @param text The text to decode
+ *
+ * @returns The value `text` encodes, or undefined if it is not well-formed JSON
+ */
+function decode(text: string): unknown {
+
+	try {
+
+		return JSON.parse(text);
+
+	} catch {
+
+		return undefined;
+
+	}
+
+}

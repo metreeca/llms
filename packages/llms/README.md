@@ -4,12 +4,11 @@
 
 AI tasks and shared services for [@metreeca/llms](https://github.com/metreeca/llms).
 
-A job names the models it relies on by their contract rather than importing a concrete client. The
-[@metreeca/gear](https://github.com/metreeca/gear) executor binds each contract to the implementation chosen for the
-run.
+Provides primitives for working with embedding vectors from any model provider: condensing the fields of a resource into
+the text to be embedded, ranking vectors by semantic proximity, and storing them in a compact textual form.
 
-Binding a different implementation leaves the job unchanged: the same job runs against a live provider, against
-recorded responses, or against any custom client honouring the same contracts.
+Jobs using them are set up and run under the [@metreeca/gear](https://github.com/metreeca/gear) job executor. This
+package contributes building blocks for those jobs, not an execution runtime of its own.
 
 # Installation
 

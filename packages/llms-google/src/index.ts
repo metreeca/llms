@@ -15,14 +15,660 @@
  */
 
 /**
- * Google model connectors for {@link https://github.com/metreeca/llms @metreeca/llms}.
+ * Google model connectors.
  *
- * Gives access to Google models through either the Gemini API, keyed by an API key, or Vertex AI, keyed by project
- * credentials.
+ * Connects AI jobs to Google models, ready to work alongside any other task in a pipeline. Long runs proceed reliably
+ * to completion, and every result a job receives from a model can be trusted as complete.
  *
  * @module index
  *
  * @see {@link https://ai.google.dev/gemini-api/docs Gemini API documentation}
+ * @see {@link https://googleapis.github.io/js-genai/release_docs/index.html Google GenAI SDK}
  */
 
-export {};
+import type { Vector } from "@metreeca/llms";
+import {
+	ApiError,
+	CallableTool,
+	Content,
+	ContentListUnion,
+	EmbedContentResponse,
+	GenerateContentResponse,
+	GoogleGenAI,
+	GoogleGenAIOptions,
+	Part
+} from "@google/genai";
+import { error, isString, memo, type Value } from "@metreeca/core";
+import { createThrottle, type Throttle } from "@metreeca/core/async";
+import { markdown } from "@metreeca/core/strings";
+import { BadRequest, TooManyRequests } from "@metreeca/http";
+import { log, Logger, report } from "@metreeca/tape";
+
+
+/**
+ * The number of attempts a request is submitted for, the initial one included, before a transient rejection is handed
+ * over to the throttle (see {@link createGoogleAI}).
+ */
+const attempts = 5;
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Creates a Gemini API client that works around known API limitations.
+ *
+ * The client exposes the full {@link GoogleGenAI} surface. Model methods issuing requests are paced against the
+ * published rate quotas, and content generation honours a requested response schema on every model, even when
+ * function calling is involved and the model itself rejects a schema alongside tools.
+ *
+ * @param options The client options, as accepted by the {@link GoogleGenAI} constructor; if omitted, the SDK defaults
+ *                apply, reading the API key for the Gemini API from the environment. Vertex AI is reached instead by
+ *                setting `vertexai`, `project` and `location`, with Google Cloud project credentials. Unless
+ *                `httpOptions.retryOptions` is set, a request failing transiently is attempted up to 5 times in total
+ *
+ * @returns A client sharing throttling, logging and structured output support among requests to the same model;
+ *          models are told apart by their exact id, so the bare and `models/`-prefixed forms of an id are paced
+ *          separately, even though both draw on the same project quota and may overrun it together
+ *
+ * @remarks
+ *
+ * A client is meant to be configured once by the consumer binding it, so that credentials and endpoint are settled for
+ * a whole execution rather than repeated by each job that draws on the same models.
+ *
+ * The client takes over three concerns the API and the SDK leave to the caller:
+ *
+ * - **Quota control**: every request is paced against a per-model adaptive throttle. A request rejected over the rate
+ *   quota is resumed after the `RetryInfo` delay the API advertises, so a long run keeps within the quota instead of
+ *   failing on 429 errors. Other transient failures, such as an overloaded model, are retried as stated by `options`,
+ *   so a run survives a spike in demand on the model rather than aborting on the first one.
+ *
+ * - **Function calling**: when a request declares `tools`, the client resolves function calls itself, issuing one
+ *   throttled request per turn. Turns are unlimited unless `automaticFunctionCalling.maximumRemoteCalls` bounds them,
+ *   and only `CallableTool` tools are invoked. A request disabling automatic function calling is submitted once, and
+ *   its function calls are returned to the caller. The request fails with an {@link !Error Error} if a response
+ *   carries no model content, if the model calls a function while no callable tool is declared, or if the turn limit
+ *   runs out before a final response; in every case the error carries no partial conversation.
+ *
+ * - **Structured output**: a requested response schema is honoured on every model. The API accepts a response schema
+ *   alongside `tools` only from the Gemini 3 generation onwards. Earlier models reply in prose, and an extra request
+ *   to `gemini-2.5-flash-lite` converts the reply into JSON conforming to the schema, at the cost of one additional
+ *   generation. A model rejecting the schema is switched to the conversion route for the lifetime of the client.
+ *
+ * @see {@link https://ai.google.dev/gemini-api/docs/function-calling Function calling}
+ * @see {@link https://ai.google.dev/gemini-api/docs/structured-output Structured output}
+ * @see {@link https://ai.google.dev/gemini-api/docs/rate-limits Rate limits}
+ * @see {@link https://github.com/googleapis/js-genai/issues/727 js-genai#727}
+ */
+export function createGoogleAI(options: GoogleGenAIOptions = {}) {
+
+	const ai = new GoogleGenAI({
+
+		...options,
+
+		httpOptions: {
+
+			// the SDK retries a transient rejection only where retry options are stated, otherwise
+			// failing the request outright: a spike in demand on the model would abort a whole run
+
+			retryOptions: { attempts },
+
+			...options.httpOptions
+
+		}
+
+	});
+
+	/**
+	 * Retrieves the request channel shared by all requests to a model, opening it on first request.
+	 *
+	 * Channels are memoised by model id exactly as supplied, so the bare and `models/`-prefixed forms of the same
+	 * model are throttled and logged independently, each under a category naming the model alone rather than this
+	 * module, so that a run reads as a list of models rather than of repeated module paths. The `structured` flag
+	 * records whether the model is currently expected to accept a response schema alongside tools: the Gemini API
+	 * supports the combination from the Gemini 3 generation onwards, so the generation read from the `gemini-` segment
+	 * of the id, whichever prefix it carries, seeds the flag, while a rejection clears it in place (see {@link retry}).
+	 *
+	 * @param model The target model name
+	 *
+	 * @returns The channel registered for `model`, retained for the lifetime of the client (see {@link memo})
+	 *
+	 * @see {@link https://ai.google.dev/gemini-api/docs/structured-output Structured output}
+	 */
+	const channels = memo<string, {
+
+		structured: boolean
+
+		logger: Logger
+		throttle: Throttle
+
+	}>(model => {
+
+		const generation = Number(model.match(/(?:^|\/)gemini-(\d+)/)?.[1] ?? 0);
+
+		return {
+
+			structured: generation >= 3,
+
+			logger: log(["/", model]),
+
+			// !!! the floor is a magic 600 rpm: derive it from the rpm published for the model, that is as
+			// !!! `60_000/rpm`, so that the pace is stated by the quota rather than guessed
+
+			// !!! a floor states requests per minute only: the token and daily quotas are not a function of
+			// !!! elapsed time and are left unguarded
+
+			// !!! quotas are enforced per project, while channels are opened per model: models running
+			// !!! concurrently overrun a shared quota, each pacing correctly on its own
+
+			throttle: createThrottle({
+				minimum: 100,
+				maximum: 60*1000,
+				buildup: 1.10,
+				backoff: 1.10,
+				recover: 0.95
+			})
+
+		};
+
+	});
+
+
+	return Object.assign(ai, { // patch to work around known issues
+
+		models: Object.assign(ai.models, {
+
+			generateContent: (generateContent => {
+
+				return async (...[{ config, ...params }, ...rest]: Parameters<typeof generateContent>) => {
+
+					const channel = channels(params.model);
+
+					return config?.tools
+						? await structure(await execute())
+						: await submit(params.model, () => generateContent({ ...params, config }, ...rest));
+
+
+					/**
+					 * Resolves a request carrying tools, driving function calling under quota throttling.
+					 *
+					 * The SDK resolves function calls through an internal loop that neither throttles its requests
+					 * nor recovers from quota exhaustion, so long tool sessions fail with unexpected 429 errors:
+					 * function declarations count towards the token limit, every turn issues a further request, and
+					 * tools such as Browser MCP or Google Search resubmit massive contexts on each one of them, as
+					 * reported for other SDKs:
+					 *
+					 * - googleapis/python-genai#17: 429 errors with the Google Search tool
+					 * - google/adk-python#1057: 1.5M tokens in ~20 requests with Browser MCP, which sends the
+					 *   entire DOM as context
+					 *
+					 * Turns are driven by {@link afc} instead, one throttled request at a time (see {@link retry}),
+					 * and a requested response schema is submitted with them wherever the model accepts it. Requests
+					 * that disable automatic function calling take the same throttled route, but are submitted once
+					 * and handed over as they come, function calls included.
+					 *
+					 * @returns The final response of the function calling loop, or the single response to a request
+					 *          that disables it
+					 *
+					 * @throws {@link !Error Error} If the function calling loop cannot be completed (see {@link afc})
+					 */
+					async function execute(): Promise<GenerateContentResponse> {
+
+						const {
+
+							tools,
+
+							automaticFunctionCalling: {
+								disable = false,
+								maximumRemoteCalls = 0
+							} = {},
+
+							responseSchema,
+							responseJsonSchema,
+							responseMimeType,
+
+							...configWithoutSchema
+
+						} = config ?? {};
+
+
+						if ( disable ) { // caller will handle function calling
+
+							return await retry(params.contents);
+
+						} else { // automatic function calling loop with quota throttling
+
+							return await afc();
+
+						}
+
+						/**
+						 * Drives the function calling loop until the model returns a final response.
+						 *
+						 * Normalises the request contents into a conversation history, then alternates throttled
+						 * model requests (see {@link retry}) with tool dispatch: the function calls requested by the
+						 * model are submitted to every `CallableTool` declared in the request and the resulting
+						 * parts are appended to the history for the next turn, until a response reports no call.
+						 *
+						 * @returns The final model response, with the conversation history attached as
+						 *          `automaticFunctionCallingHistory`
+						 *
+						 * @throws {@link !Error Error} If a response carries no model content, if a function is
+						 *         requested while no callable tool is declared, or if `maximumRemoteCalls` turns
+						 *         are exhausted without a final response
+						 */
+						async function afc() {
+
+							const callables = tools?.filter((tool): tool is CallableTool =>
+								typeof tool === "object" && tool !== null && "callTool" in tool
+								&& typeof tool.callTool === "function"
+							) ?? [];
+
+							const history: Content[] = (Array.isArray(params.contents)
+									? params.contents
+									: [params.contents]
+							).map(content =>
+								isString(content) ? { role: "user", parts: [{ text: content }] }
+									: "role" in content && "parts" in content ? content
+										: { role: "user", parts: [content as Part] }
+							);
+
+							for (let turn = 0; maximumRemoteCalls === 0 || turn < maximumRemoteCalls; turn++) {
+
+								const response = await retry(history);
+
+								if ( !response.candidates?.[0]?.content ) {
+									throw new Error("no model content in response");
+								}
+
+								const calls = (response.candidates[0]?.content?.parts ?? [])
+									.map(part => part.functionCall)
+									.filter((call) => call !== undefined);
+
+								if ( calls.length === 0 ) {
+
+									return Object.assign(response, {
+										automaticFunctionCallingHistory: history
+									});
+
+								} else {
+
+									if ( callables.length === 0 ) {
+										throw new Error(`no callable tools available to fulfill model requests <${
+											calls.map(call => call.name).join(", ")
+										}>`);
+									}
+
+									history.push(response.candidates[0].content, {
+										role: "user",
+										parts: (await Promise.all(callables.map(tool => tool.callTool(calls)))).flat()
+									});
+
+								}
+
+							}
+
+							throw new Error(`maximum turns (${maximumRemoteCalls}) reached without completion`);
+						}
+
+						/**
+						 * Submits a single model request under the throttle of the target model.
+						 *
+						 * Every request carrying tools is submitted here, with the SDK function calling loop always
+						 * disabled, so each call performs exactly one request and turn management stays with
+						 * {@link afc}. A requested response schema is submitted only to models expected to accept it
+						 * alongside tools, leaving the conversion to {@link structure} on the others. A 429 rejection
+						 * is retried after the delay advertised by the API; a 400 rejection received while a response
+						 * schema is being submitted is taken as the model refusing it, closing the channel to schemas
+						 * (see {@link channels}) and retrying the same request at once without one.
+						 *
+						 * @param contents The conversation to submit
+						 *
+						 * @returns The model response to `contents`
+						 *
+						 * @throws {ApiError} If the request fails for a reason the throttle cannot recover from
+						 */
+						async function retry(contents: ContentListUnion) {
+
+							return await submit(params.model, () => generateContent({
+								...params,
+								contents,
+
+								config: {
+
+									...configWithoutSchema,
+									tools,
+
+									// disable the SDK loop: it would resolve function calls without throttling,
+									// leaving this loop with nothing but the final response
+
+									automaticFunctionCalling: { disable: true },
+
+									// submit the response schema only to models accepting it alongside tools,
+									// leaving the conversion to `structure` on the others
+
+									...(channel.structured ? { responseMimeType, responseSchema, responseJsonSchema } : {})
+
+								}
+
+							}, ...rest), schema);
+
+
+							/**
+							 * States the delay a request rejected over its response schema is to be retried after.
+							 *
+							 * @param error The rejection to recover from
+							 *
+							 * @returns 0, retrying at once without the schema, if `error` reports the model refusing
+							 *          it; undefined otherwise, leaving the rejection to the quota recovery of
+							 *          {@link submit}
+							 */
+							function schema(error: unknown): undefined | number {
+
+								if ( error instanceof ApiError && error.status === BadRequest && channel.structured ) {
+
+									// the model doesn't accept a response schema alongside tools: close the channel to
+									// schemas and immediately retry the same request without one, leaving the
+									// conversion to `structure`
+
+									channel.structured = false;
+
+									channel.logger.warning`response schema rejected with tools: converting separately`;
+
+									return 0;
+
+								} else {
+
+									return undefined;
+
+								}
+
+							}
+
+						}
+
+					}
+
+					/**
+					 * Converts a final textual response into the requested structured JSON.
+					 *
+					 * Models earlier than the Gemini 3 generation reject a `responseMimeType` of `"application/json"`
+					 * alongside `tools`, so they are served without the response schema and reply in prose: a
+					 * separate `gemini-2.5-flash-lite` request converts it into JSON conforming to the requested
+					 * schema, at the cost of one extra generation. Models that accept the schema with the request
+					 * produce the JSON themselves and bypass the conversion (see {@link channels}).
+					 *
+					 * @param response The model response to post-process
+					 *
+					 * @returns `response` with its candidates replaced by the converted JSON, or `response` as it
+					 *          stands if the model applied the schema itself, if no schema was requested, or if the
+					 *          response is still awaiting tool execution
+					 *
+					 * @throws {@link !Error Error} If the response to convert carries no text
+					 *
+					 * @see {@link https://github.com/googleapis/js-genai/issues/727 js-genai#727}
+					 */
+					async function structure(response: GenerateContentResponse) {
+
+						const { responseSchema, responseJsonSchema } = config ?? {};
+
+						const hasFunctionCalls = response.candidates?.[0]?.content?.parts?.some(
+							part => part.functionCall
+						);
+
+						if ( channel.structured || !(responseSchema || responseJsonSchema) || hasFunctionCalls ) {
+
+							return response;
+
+						} else {
+
+							const input = text(response);
+
+							if ( !input || !input.trim() ) {
+								throw new Error("empty model response: unable to extract structured data");
+							}
+
+							const urls = [...new Set(input.match(/https?:\/\/[^\s\[\]()<>]+/g) || [])];
+
+							const converter = "gemini-2.5-flash-lite";
+
+							const data = await submit(converter, () => generateContent({
+								model: converter,
+								contents: [input, urls.length > 0
+									? markdown`REFERENCE URLs found in source (use EXACTLY as written):
+											${urls.map(url => `- ${url}`).join("\n")}
+									`
+									: "REFERENCE URLs found in source: (none identified)"
+								],
+								config: {
+									seed: 0,
+									temperature: 0,
+									systemInstruction: markdown`
+									
+										# ROLE
+										
+										You are a data engineer.
+										
+										# INPUT
+										
+										You will be provided with a textual report and a reference list of URLs
+										extracted from it.
+										
+										# GOAL
+										
+										Your task is to convert it into a structured machine-readable representation.
+										
+										# OUTPUT
+										
+										Reply with a structured JSON object; unless otherwise required by the
+										provided schema:
+
+										- ALWAYS omit undefined scalar values
+										- ALWAYS omit empty object values
+										- ALWAYS omit empty array values
+										- ALWAYS omit fields with value "Not defined" or similar placeholder text
+										- ALWAYS omit fields with error messages or system artifacts
+
+										# CRITICAL
+										
+										When including URLs in the output:
+										
+										- ALWAYS copy-paste them EXACTLY from the REFERENCE URLs list
+										- NEVER modify domain names (e.g., 'ec2u' must remain 'ec2u', NOT 'ec22')
+										- NEVER modify path components
+										
+									`,
+									responseMimeType: "application/json",
+									responseSchema,
+									responseJsonSchema
+								}
+							}));
+
+							return {
+								...response,
+								candidates: data.candidates
+							};
+
+						}
+					}
+
+				};
+
+			})(ai.models.generateContent.bind(ai.models)),
+
+			generateContentStream: throttled(ai.models.generateContentStream.bind(ai.models)),
+			embedContent: throttled(ai.models.embedContent.bind(ai.models)),
+
+			countTokens: throttled(ai.models.countTokens.bind(ai.models)),
+			computeTokens: throttled(ai.models.computeTokens.bind(ai.models)),
+
+			generateImages: throttled(ai.models.generateImages.bind(ai.models)),
+			generateVideos: throttled(ai.models.generateVideos.bind(ai.models))
+
+		})
+
+	});
+
+
+	/**
+	 * Submits a request under the throttle of the model it targets.
+	 *
+	 * Requests to the same model are paced against a shared adaptive throttle, so that concurrent consumers of a model
+	 * keep within its published rate quota, and a rejection reporting a `RetryInfo` delay is retried after the delay
+	 * the API advertises rather than at a pace of the client's own.
+	 *
+	 * @param model The target model name, keying the channel the request is paced against (see {@link channels})
+	 * @param request The request to submit
+	 * @param recover The recovery to attempt before the quota one, if any
+	 *
+	 * @returns The value `request` resolves to
+	 *
+	 * @throws {ApiError} If the request fails for a reason neither `recover` nor the quota recovery handles
+	 */
+	function submit<V>(model: string, request: () => Promise<V>,
+		recover?: (error: unknown) => undefined | number
+	): Promise<V> {
+
+		const { throttle, logger: mlogger } = channels(model);
+
+		return throttle.retry(request, {
+
+			recover: error => recover?.(error) ?? quota(error),
+
+			monitor: (attempt, attempts, elapsed) => {
+
+				const count = attempts > 0 ? `${attempt+1}/${attempts}` : `${attempt+1}`;
+
+				if ( elapsed === undefined ) {
+					mlogger.error`request attempt ${count} aborted`;
+				} else if ( attempt > 0 ) {
+					mlogger.warning`request attempt ${count} rejected with delay ${elapsed} ms`;
+				} else {
+					mlogger.info`request attempt ${count} submitted with delay ${elapsed} ms`;
+				}
+
+			}
+
+		});
+
+	}
+
+	/**
+	 * States the delay a request rejected over the rate quota is to be retried after.
+	 *
+	 * @param error The rejection to recover from
+	 *
+	 * @returns The delay advertised by the API, in ms, if `error` reports an exhausted quota alongside a `RetryInfo`
+	 *          detail; undefined otherwise, leaving the rejection to the caller
+	 *
+	 * @see {@link https://ai.google.dev/gemini-api/docs/rate-limits Rate limits}
+	 */
+	function quota(error: unknown): undefined | number {
+
+		if ( error instanceof ApiError && error.status === TooManyRequests ) {
+
+			const delay = (error as ApiError & { // ;(cast) the SDK error type carries no quota details
+				error?: { details?: readonly Record<string, unknown>[] }
+			}).error?.details
+				?.find(detail => `${detail["@type"]}`.includes("RetryInfo"))
+				?.["retryDelay"];
+
+			const match = `${delay}`.match(/^(\d+(?:\.\d+)?)s$/);
+
+			return match ? Math.ceil(parseFloat(match[1])*1000) : undefined;
+
+		} else {
+
+			return undefined;
+
+		}
+
+	}
+
+	/**
+	 * Adapts a model method into one submitting its requests under the throttle of the model they target.
+	 *
+	 * @typeParam P The type of the request parameters, naming the target model
+	 * @typeParam V The type of the value the method resolves to
+	 *
+	 * @param method The model method to adapt
+	 *
+	 * @returns A method submitting the requests of `method` through {@link submit}
+	 */
+	function throttled<P extends { model: string }, V>(method: (params: P) => Promise<V>): (params: P) => Promise<V> {
+
+		return params => submit(params.model, () => method(params));
+
+	}
+
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Extracts the output text of a Gemini API response.
+ *
+ * Thinking parts and function calls are skipped, so only the text generated for the caller is returned. A response
+ * without output text is rejected as an empty generation. The error names the finish reason, so a generation the model
+ * withheld, for instance for `RECITATION`, can be told apart from a malformed payload.
+ *
+ * @param response The response of a `generateContent` request
+ *
+ * @returns The trimmed output text of `response`, joining the text of multiple parts with blank lines
+ *
+ * @throws {@link !Error Error} If `response` carries no output text, naming the finish reason of the response
+ */
+export function text(response: GenerateContentResponse): string {
+
+	const candidate = response.candidates?.[0];
+	const parts = (candidate?.content?.parts ?? []).filter(part => part.text && !part.thought);
+
+	return parts.length > 0 ? parts
+		.map(part => part.text)
+		.join("\n\n")
+		.trim() : error(`empty generation <${candidate?.finishReason}>`);
+}
+
+/**
+ * Extracts the output text of a Gemini API response as a JSON payload.
+ *
+ * The payload is parsed from the output text produced under the requested response schema, and typed as `T` without
+ * further validation: callers needing guarantees on its shape must validate it themselves.
+ *
+ * @typeParam T The expected shape of the JSON payload
+ *
+ * @param response The response of a `generateContent` request carrying a response schema
+ *
+ * @returns The JSON payload parsed from the output text of `response`
+ *
+ * @throws {@link !Error Error} If `response` carries no output text (see {@link text}), or if its text is not
+ * well-formed JSON, for instance because the reply was cut short by an exhausted output budget
+ */
+export function json<T extends Value = Value>(response: GenerateContentResponse): T {
+
+	const output = text(response);
+
+	try {
+
+		return JSON.parse(output);
+
+	} catch ( e ) {
+
+		throw new Error(`malformed model response: ${report(e)}`);
+
+	}
+
+}
+
+/**
+ * Extracts the embedding of a Gemini API response.
+ *
+ * @param response The response of an `embedContent` request
+ *
+ * @returns The {@link Vector} embedded for the first content of `response`, or an empty array if it carries none
+ */
+export function embedding(response: EmbedContentResponse): Vector {
+
+	return response.embeddings?.[0]?.values ?? [];
+
+}

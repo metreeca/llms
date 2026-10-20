@@ -4,7 +4,8 @@
 
 OpenAI model connectors for [@metreeca/llms](https://github.com/metreeca/llms).
 
-Gives access to OpenAI models through the OpenAI API, keyed by an API key.
+Connects AI jobs to OpenAI models, ready to work alongside any other task in a pipeline. Long runs proceed reliably to
+completion, and every result a job receives from a model can be trusted as complete.
 
 # Installation
 
