@@ -2,14 +2,13 @@
 
 Ready-made tasks and shared services for AI jobs.
 
-**@metreeca/llms** brings ready-made [@metreeca/flow](https://github.com/metreeca/flow) tasks for putting model work
-into a pipeline: prompting a model, extracting structure from free text, embedding content for retrieval. The tasks run
-under the [@metreeca/gear](https://github.com/metreeca/gear) job executor, which supplies the shared services they draw
-on.
+**@metreeca/llms** provides ready-made [@metreeca/flow](https://github.com/metreeca/flow) tasks for putting language
+models to work in a pipeline: prompting a model, extracting structured records from free text, and embedding content for
+semantic retrieval. The tasks run under the [@metreeca/gear](https://github.com/metreeca/gear) job executor, which
+supplies the shared services they draw on, including the clients of the model providers they reach.
 
 - **Ready-Made Tasks**: prompting, extraction and embedding, chaining alongside any other task
-- **Shared Services**: the model clients, credentials and response caches a run needs, built on demand and released as
-	it ends
+- **Shared Services**: model clients, credentials and response caches, built on demand and released after the run
 - **Custom Bindings**: a stubbed, throttled or recorded model swapped in for a run, leaving the job untouched
 - **Minimal Footprint**: one package per model provider, each pulling in only the SDK that provider needs
 
