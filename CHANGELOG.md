@@ -5,16 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0](https://github.com/metreeca/muse/compare/v0.2.0...HEAD)
+## [0.3.0](https://github.com/metreeca/llms/compare/v0.2.0...HEAD)
 
 ### Changed
 
+- Rename `@metreeca/muse`, `@metreeca/muse-google` and `@metreeca/muse-openai` to `@metreeca/llms`,
+  `@metreeca/llms-google` and `@metreeca/llms-openai`; the former names receive no further releases
 - Upgrade `@metreeca/core` to `^0.13.0`
 - Upgrade `@metreeca/flow` to `^0.12.0`
 - Upgrade `@metreeca/gear` to `^0.4.0`
 - Upgrade `@metreeca/tape` to `^0.12.0`
 
-## [0.2.0](https://github.com/metreeca/muse/compare/v0.1.1...v0.2.0) - 2026-10-14
+## [0.2.0](https://github.com/metreeca/llms/compare/v0.1.1...v0.2.0) - 2026-10-14
 
 ### Added
 
@@ -25,14 +27,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Require `@metreeca/core` `^0.12.1`, `@metreeca/flow` `^0.11.1`, `@metreeca/gear` `^0.3.1` and `@metreeca/tape`
   `^0.11.1`, so that a consumer on the current line resolves one copy of each rather than a second, superseded one
 
-## [0.1.1](https://github.com/metreeca/muse/compare/v0.1.0...v0.1.1) - 2026-09-09
+## [0.1.1](https://github.com/metreeca/llms/compare/v0.1.0...v0.1.1) - 2026-09-09
 
 ### Changed
 
 - requires `@metreeca/core` `^0.10.0`, `@metreeca/flow` `^0.10.0`, `@metreeca/gear` `^0.2.0` and `@metreeca/tape`
   `^0.10.1`, so that a consumer on the current line resolves one copy of each rather than a second, superseded one
 
-## [0.1.0](https://github.com/metreeca/muse/releases/tag/v0.1.0) - 2026-09-04
+## [0.1.0](https://github.com/metreeca/llms/releases/tag/v0.1.0) - 2026-09-04
 
 Initial release, claiming the package names and enabling automated publishing. The modules carry no public API yet:
 jobs run under the [@metreeca/gear](https://github.com/metreeca/gear) executor, to which this repository contributes

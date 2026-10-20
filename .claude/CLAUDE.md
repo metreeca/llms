@@ -11,8 +11,8 @@
 
 # Overview
 
-`@metreeca/muse` is a standalone, general-purpose monorepo collecting the AI task framework core and its provider
-packages, each sitting directly under `packages/` (for example `packages/muse/`).
+`@metreeca/llms` is a standalone, general-purpose monorepo collecting the AI task framework core and its provider
+packages, each sitting directly under `packages/` (for example `packages/llms/`).
 
 Jobs run under the `@metreeca/gear` executor: this repository contributes model services and tasks, **NEVER** an
 execution runtime of its own. Reach for `executor`, `bind` and `service` from `@metreeca/gear` rather than
@@ -43,10 +43,10 @@ reimplementing them, and keep the service contracts compatible with the ones `@m
 # Package Layout
 
 The root `package.json` `workspaces` glob (`packages/*`) covers the framework packages, each in its own directory
-immediately under `packages/` (for example `packages/muse`).
+immediately under `packages/` (for example `packages/llms`).
 
 Provider packages are self-contained leaves named after the vendor, not the cloud platform or the model family:
-`muse-google`, not `muse-gcp` or `muse-gemini`. Each pulls in the core package transitively and only the SDK its own
+`llms-google`, not `llms-gcp` or `llms-gemini`. Each pulls in the core package transitively and only the SDK its own
 provider needs.
 
 # Shared Utilities
@@ -86,6 +86,6 @@ An export entry lacking the condition falls back to `dist` as well, and tests th
 # Version Management
 
 All workspace packages share the root `package.json` version. Beyond the `version` fields the release flow already
-cascades, update the internal `@metreeca/muse*` dependency ranges in every `packages/**/package.json` to match.
+cascades, update the internal `@metreeca/llms*` dependency ranges in every `packages/**/package.json` to match.
 
 When adding, removing, or renaming packages, update the package table in the root `README.md` Usage section to match.

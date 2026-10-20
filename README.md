@@ -1,24 +1,8 @@
-# Renaming
-
-`muse` is to be replaced: since April 2026 Meta has used *Muse* for its generative AI line (the Muse Spark, Glimmer and
-Wonder models, the Muse agent app and Muse Code), and has filed a *META MUSE* trademark application. The legal risk is
-low, but the name is now ambiguous in searches and in documentation, and a Meta connector would read as
-`muse-meta`.
-
-Candidates keep to four letters and to the light, slightly whimsical register of the sibling packages.
-
-| Name   | Rationale                                                                       | Clash         |
-|--------|---------------------------------------------------------------------------------|---------------|
-| `talk` | covers both directions: code talking to models, models talking to tools via MCP | none relevant |
-| `seer` | the everyday word for an oracle or sibyl                                        | none relevant |
-| `wand` | the magic wand and ✨ sparkle are the usual UI icons for generative AI          | none relevant |
-| `poet` | the figure the Muse inspires; a model that composes                             | none relevant |
-
-# @metreeca/muse
+# @metreeca/llms
 
 Ready-made tasks and shared services for AI jobs.
 
-**@metreeca/muse** brings ready-made [@metreeca/flow](https://github.com/metreeca/flow) tasks for putting model work
+**@metreeca/llms** brings ready-made [@metreeca/flow](https://github.com/metreeca/flow) tasks for putting model work
 into a pipeline: prompting a model, extracting structure from free text, embedding content for retrieval. The tasks run
 under the [@metreeca/gear](https://github.com/metreeca/gear) job executor, which supplies the shared services they draw
 on.
@@ -38,8 +22,8 @@ on.
 
 ```shell
 npm install @metreeca/gear             # job executor and shared services
-npm install @metreeca/muse             # AI tasks and shared services
-npm install @metreeca/muse-<provider>  # model connectors, one package per provider
+npm install @metreeca/llms             # AI tasks and shared services
+npm install @metreeca/llms-<provider>  # model connectors, one package per provider
 ```
 
 > [!WARNING]
@@ -53,29 +37,29 @@ package pulls in only the SDK its own provider needs. The core package already d
 
 | Package                 | Description                  |
 |-------------------------|------------------------------|
-| [@metreeca/muse]        | AI tasks and shared services |
-| [@metreeca/muse-google] | Google model connectors      |
-| [@metreeca/muse-openai] | OpenAI model connectors      |
+| [@metreeca/llms]        | AI tasks and shared services |
+| [@metreeca/llms-google] | Google model connectors      |
+| [@metreeca/llms-openai] | OpenAI model connectors      |
 
-[@metreeca/muse]: https://metreeca.github.io/muse/modules/_metreeca_muse.html
+[@metreeca/llms]: https://metreeca.github.io/llms/modules/_metreeca_llms.html
 
-[@metreeca/muse-google]: https://metreeca.github.io/muse/modules/_metreeca_muse-google.html
+[@metreeca/llms-google]: https://metreeca.github.io/llms/modules/_metreeca_llms-google.html
 
-[@metreeca/muse-openai]: https://metreeca.github.io/muse/modules/_metreeca_muse-openai.html
+[@metreeca/llms-openai]: https://metreeca.github.io/llms/modules/_metreeca_llms-openai.html
 
 # Usage
 
 > [!NOTE]
 >
 > Each package documents its own API in its README and API reference; for complete coverage, see the
-> [API reference](https://metreeca.github.io/muse/).
+> [API reference](https://metreeca.github.io/llms/).
 
 # Support
 
-- open an [issue](https://github.com/metreeca/muse/issues) to report a problem or to suggest a new feature
-- start a [discussion](https://github.com/metreeca/muse/discussions) to ask a how-to question or to share an idea
+- open an [issue](https://github.com/metreeca/llms/issues) to report a problem or to suggest a new feature
+- start a [discussion](https://github.com/metreeca/llms/discussions) to ask a how-to question or to share an idea
 
 # License
 
 This project is licensed under the Apache 2.0 License –
-see [LICENSE](https://github.com/metreeca/muse?tab=Apache-2.0-1-ov-file) file for details.
+see [LICENSE](https://github.com/metreeca/llms?tab=Apache-2.0-1-ov-file) file for details.

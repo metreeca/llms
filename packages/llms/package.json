@@ -1,16 +1,16 @@
 {
-  "name": "@metreeca/muse",
+  "name": "@metreeca/llms",
   "version": "0.3.0",
-  "description": "AI tasks and shared services for @metreeca/muse.",
+  "description": "AI tasks and shared services for @metreeca/llms.",
   "keywords": [
     "typescript",
     "pipeline",
     "ai",
     "llm"
   ],
-  "homepage": "https://metreeca.github.io/muse/",
+  "homepage": "https://metreeca.github.io/llms/",
   "bugs": {
-    "url": "https://github.com/metreeca/muse/issues",
+    "url": "https://github.com/metreeca/llms/issues",
     "email": "info@metreeca.com"
   },
   "license": "Apache-2.0",
@@ -21,8 +21,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/metreeca/muse.git",
-    "directory": "packages/muse"
+    "url": "git+https://github.com/metreeca/llms.git",
+    "directory": "packages/llms"
   },
   "type": "module",
   "sideEffects": false,

@@ -15,7 +15,7 @@
  */
 
 /**
- * OpenAI model connectors for {@link https://github.com/metreeca/muse @metreeca/muse}.
+ * OpenAI model connectors for {@link https://github.com/metreeca/llms @metreeca/llms}.
  *
  * Gives access to OpenAI models through the OpenAI API, keyed by an API key.
  *

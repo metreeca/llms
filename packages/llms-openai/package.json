@@ -1,7 +1,7 @@
 {
-  "name": "@metreeca/muse-openai",
+  "name": "@metreeca/llms-openai",
   "version": "0.3.0",
-  "description": "OpenAI model connectors for @metreeca/muse.",
+  "description": "OpenAI model connectors for @metreeca/llms.",
   "keywords": [
     "typescript",
     "pipeline",
@@ -10,9 +10,9 @@
     "openai",
     "gpt"
   ],
-  "homepage": "https://metreeca.github.io/muse/",
+  "homepage": "https://metreeca.github.io/llms/",
   "bugs": {
-    "url": "https://github.com/metreeca/muse/issues",
+    "url": "https://github.com/metreeca/llms/issues",
     "email": "info@metreeca.com"
   },
   "license": "Apache-2.0",
@@ -23,8 +23,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/metreeca/muse.git",
-    "directory": "packages/muse-openai"
+    "url": "git+https://github.com/metreeca/llms.git",
+    "directory": "packages/llms-openai"
   },
   "type": "module",
   "sideEffects": false,
@@ -49,7 +49,7 @@
   },
   "dependencies": {
     "@metreeca/flow": "^0.12.0",
-    "@metreeca/muse": "^0.3.0",
+    "@metreeca/llms": "^0.3.0",
     "@metreeca/tape": "^0.12.0",
     "openai": "^7.25.0"
   },

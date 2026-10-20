@@ -15,7 +15,7 @@
  */
 
 /**
- * Google model connectors for {@link https://github.com/metreeca/muse @metreeca/muse}.
+ * Google model connectors for {@link https://github.com/metreeca/llms @metreeca/llms}.
  *
  * Gives access to Google models through either the Gemini API, keyed by an API key, or Vertex AI, keyed by project
  * credentials.

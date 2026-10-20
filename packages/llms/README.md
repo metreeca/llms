@@ -1,8 +1,8 @@
-# @metreeca/muse
+# @metreeca/llms
 
-[![npm](https://img.shields.io/npm/v/@metreeca/muse)](https://www.npmjs.com/package/@metreeca/muse)
+[![npm](https://img.shields.io/npm/v/@metreeca/llms)](https://www.npmjs.com/package/@metreeca/llms)
 
-AI tasks and shared services for [@metreeca/muse](https://github.com/metreeca/muse).
+AI tasks and shared services for [@metreeca/llms](https://github.com/metreeca/llms).
 
 A job names the models it relies on by their contract rather than importing a concrete client. The
 [@metreeca/gear](https://github.com/metreeca/gear) executor binds each contract to the implementation chosen for the
@@ -15,7 +15,7 @@ recorded responses, or against any custom client honouring the same contracts.
 
 ```shell
 npm install @metreeca/gear  # the job executor
-npm install @metreeca/muse  # this package
+npm install @metreeca/llms  # this package
 ```
 
 > [!IMPORTANT]
@@ -31,16 +31,16 @@ npm install @metreeca/muse  # this package
 
 | Module                 | Description                  |
 |------------------------|------------------------------|
-| [@metreeca/muse][muse] | AI tasks and shared services |
+| [@metreeca/llms][llms] | AI tasks and shared services |
 
-[muse]: https://metreeca.github.io/muse/modules/_metreeca_muse.html
+[llms]: https://metreeca.github.io/llms/modules/_metreeca_llms.html
 
 # Support
 
-- open an [issue](https://github.com/metreeca/muse/issues) to report a problem or to suggest a new feature
-- start a [discussion](https://github.com/metreeca/muse/discussions) to ask a how-to question or to share an idea
+- open an [issue](https://github.com/metreeca/llms/issues) to report a problem or to suggest a new feature
+- start a [discussion](https://github.com/metreeca/llms/discussions) to ask a how-to question or to share an idea
 
 # License
 
 This project is licensed under the Apache 2.0 License –
-see [LICENSE](https://github.com/metreeca/muse?tab=Apache-2.0-1-ov-file) file for details.
+see [LICENSE](https://github.com/metreeca/llms?tab=Apache-2.0-1-ov-file) file for details.
