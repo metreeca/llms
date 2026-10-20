@@ -31,8 +31,8 @@ npm install @metreeca/llms-<provider>  # model connectors, one package per provi
 > The legacy `"node"` resolver is not supported.
 
 Install the core package, then add a connector package for each model provider the pipeline reaches. Each connector
-package pulls in only the SDK its own provider needs. The core package already depends on the
-[@metreeca/gear](https://github.com/metreeca/gear) job executor; install it directly to set up and run a job.
+package pulls in only the SDK its own provider needs. The [@metreeca/gear](https://github.com/metreeca/gear) job
+executor ships separately: install it directly to set up and run the jobs putting tasks and connectors to work.
 
 | Package                 | Description                  |
 |-------------------------|------------------------------|

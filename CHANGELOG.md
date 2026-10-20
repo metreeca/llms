@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0](https://github.com/metreeca/llms/compare/v0.2.0...HEAD)
+## [0.3.0](https://github.com/metreeca/llms/compare/v0.2.0...v0.3.0) - 2026-10-20
 
 ### Added
 
@@ -21,9 +21,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rename `@metreeca/muse`, `@metreeca/muse-google` and `@metreeca/muse-openai` to `@metreeca/llms`,
   `@metreeca/llms-google` and `@metreeca/llms-openai`; the former names receive no further releases
 - Upgrade `@metreeca/core` to `^0.13.0`
-- Upgrade `@metreeca/flow` to `^0.12.0`
-- Upgrade `@metreeca/gear` to `^0.4.0`
 - Upgrade `@metreeca/tape` to `^0.12.0`
+- Drop the `@metreeca/flow` and `@metreeca/gear` dependencies, which no package imports
 
 ## [0.2.0](https://github.com/metreeca/llms/compare/v0.1.1...v0.2.0) - 2026-10-14
 
