@@ -1,6 +1,6 @@
 {
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Ready-made tasks and shared services for AI jobs.",
   "keywords": [
     "typescript",
@@ -29,7 +29,7 @@
   },
   "allowScripts": {
     "fsevents@2.3.3": true,
-    "@google/genai@2.21.0": false,
+    "@google/genai@2.30.0": false,
     "protobufjs@7.6.6": false
   }
 }
